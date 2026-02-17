@@ -1,0 +1,18 @@
+# render.yaml – Render.com Blueprint
+# ──────────────────────────────────
+# الاستخدام:
+#   1. ارفع المشروع على GitHub
+#   2. في Render Dashboard → New → Blueprint → اختر الريبو
+#   3. Render هيقرأ هذا الملف ويعمل setup تلقائي
+#   4. أضف BOT_TOKEN في Environment Variables
+
+services:
+  - type: worker
+    name: telepot-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BOT_TOKEN
+        sync: false            # هتدخله يدوي في Render Dashboard
+    plan: free                 # الخطة المجانية تكفي
+    autoDeploy: true           # deploy تلقائي عند كل push

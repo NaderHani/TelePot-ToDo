@@ -1,0 +1,23 @@
+# Environment variables (contains BOT_TOKEN!)
+.env
+
+# Database
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
