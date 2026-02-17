@@ -298,26 +298,46 @@ def is_past(dt: datetime) -> bool:
 
 
 def format_due(dt: datetime) -> str:
-    """تنسيق التاريخ بشكل جميل"""
+    """تنسيق التاريخ بشكل جميل مع وقت نسبي للقريب"""
     now = datetime.now(CAIRO)
     diff = dt - now
-
-    date_str = dt.strftime("%Y-%m-%d")
+    total_mins = int(diff.total_seconds() / 60)
     time_str = dt.strftime("%I:%M %p")
 
-    # لو اليوم
+    # ─── وقت نسبي للمهام القريبة (أقل من 6 ساعات) ───
+    if 0 < total_mins < 360:
+        hours = total_mins // 60
+        mins = total_mins % 60
+        if total_mins < 60:
+            return f"بعد {total_mins} دقيقة ({time_str})"
+        elif hours == 1 and mins == 0:
+            return f"بعد ساعة ({time_str})"
+        elif hours == 2 and mins == 0:
+            return f"بعد ساعتين ({time_str})"
+        elif hours == 1:
+            return f"بعد ساعة و {mins} دقيقة ({time_str})"
+        elif hours == 2:
+            return f"بعد ساعتين و {mins} دقيقة ({time_str})"
+        elif mins == 0:
+            return f"بعد {hours} ساعات ({time_str})"
+        else:
+            return f"بعد {hours} ساعات و {mins} دقيقة ({time_str})"
+
+    # ─── اليوم ───
     if dt.date() == now.date():
         return f"النهاردة {time_str}"
-    # لو بكرة
+
+    # ─── بكرة ───
     if (dt.date() - now.date()).days == 1:
         return f"بكرة {time_str}"
-    # لو أقل من أسبوع
-    if diff.days < 7:
+
+    # ─── أقل من أسبوع ───
+    if 0 < diff.days < 7:
         days_ar = ["الاتنين", "التلات", "الاربع", "الخميس", "الجمعة", "السبت", "الحد"]
         day_name = days_ar[dt.weekday()]
         return f"{day_name} {time_str}"
 
-    return f"{date_str} {time_str}"
+    return f"{dt.strftime('%Y-%m-%d')} {time_str}"
 
 
 # ══════════════════════════════════════════════════
