@@ -173,8 +173,8 @@ def normalize_arabic(text: str) -> str:
     # "الساعه 7" / "الساعة 7" → "7:00"
     s = re.sub(r"الساع[ةه]\s*(\d+)", r"\1:00", s)
 
-    # "صحيني" / "نبهني" / "فكرني" / "قومني" → شيلهم (هم العنوان مش الوقت)
-    s = re.sub(r"^(?:صحيني|صحني|نبهني|فكرني|قومني|وريني)\s*", "", s)
+    # "صحيني" / "نبهني" / "فكرني" / "قومني" → شيلهم (مش جزء من الوقت)
+    s = re.sub(r"(?:صحيني|صحني|نبهني|فكرني|قومني|وريني|ذكرني)\s*", "", s)
 
     # تنظيف مسافات زيادة
     s = re.sub(r"\s+", " ", s).strip()
@@ -199,6 +199,26 @@ def smart_parse(text: str) -> datetime | None:
     return None
 
 
+# أفعال تُشيل من العنوان (مش جزء من المهمة)
+TITLE_STRIP_VERBS = re.compile(
+    r"^(?:فكرني|ذكرني|نبهني|صحيني|صحني|قومني|قولي|"
+    r"remind\s+me(?:\s+to)?)\s*",
+    re.IGNORECASE,
+)
+# كلمات ربط تُشيل من أول العنوان
+TITLE_STRIP_PREFIX = re.compile(
+    r"^(?:ب|بال|بأ|بإ|بان|إن[يى]\s+|ان[يى]\s+|عشان\s+|إن(?:ي|ى)\s+)\s*",
+)
+
+
+def clean_title(raw: str) -> str:
+    """تنظيف عنوان المهمة من الأفعال والكلمات الزيادة"""
+    t = raw.strip()
+    t = TITLE_STRIP_VERBS.sub("", t).strip()
+    t = TITLE_STRIP_PREFIX.sub("", t).strip()
+    return t if t else raw.strip()
+
+
 def parse_natural_date(text: str) -> tuple[str, datetime | None]:
     """
     محاولة استخراج التاريخ من النص الطبيعي.
@@ -209,38 +229,35 @@ def parse_natural_date(text: str) -> tuple[str, datetime | None]:
     if parsed:
         return text.strip(), parsed
 
-    # حاول تقسيم النص واستخراج التاريخ من أجزاء مختلفة
     words = text.split()
     best_date = None
     best_title = text.strip()
 
-    # جرب من آخر كلمة (التاريخ غالبًا في الآخر: "اشتري هدية بكرة 3 الصبح")
-    for i in range(len(words) - 1, max(len(words) - 6, 0) - 1, -1):
-        date_part = " ".join(words[i:])
-        title_part = " ".join(words[:i])
+    # ──────────────────────────────────────────
+    # جرب من الأول: الأطول أولاً (عشان "بكرة 9 الصبح" يتلقط قبل "بكرة 9")
+    # ──────────────────────────────────────────
+    max_date_words = min(len(words) - 1, 6)
+    for i in range(max_date_words, 0, -1):
+        date_part = " ".join(words[:i])
+        title_part = " ".join(words[i:])
         parsed = smart_parse(date_part)
         if parsed and title_part:
             best_date = parsed
-            best_title = title_part.strip()
+            best_title = clean_title(title_part)
             break
 
-    # جرب من أول كلمة (التاريخ في الأول: "بكرة 3:30 اشتري هدية")
+    # ──────────────────────────────────────────
+    # جرب من الآخر: الأطول أولاً (عشان "بكرة 3 العصر" يتلقط كامل)
+    # ──────────────────────────────────────────
     if not best_date:
-        for i in range(2, min(len(words) + 1, 6)):
-            date_part = " ".join(words[:i])
-            title_part = " ".join(words[i:])
+        for i in range(1, min(len(words), 6)):
+            date_part = " ".join(words[i:])
+            title_part = " ".join(words[:i])
             parsed = smart_parse(date_part)
             if parsed and title_part:
                 best_date = parsed
-                best_title = title_part.strip()
+                best_title = clean_title(title_part)
                 break
-
-    # جرب أول كلمة فقط
-    if not best_date and len(words) > 1:
-        parsed = smart_parse(words[0])
-        if parsed:
-            best_date = parsed
-            best_title = " ".join(words[1:]).strip()
 
     return best_title, best_date
 
