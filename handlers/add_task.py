@@ -88,6 +88,17 @@ PM_WORDS = [
     "بالليل", "الليل", "بليل", "بلليل", "ليلا", "ليلًا", "ليل",
     "م",
 ]
+
+# ─── بناء regex آمن للـ AM/PM (عشان "ص" ما يتلقطش جوه "العصر") ───
+_AR_CHAR = r"[\u0600-\u06FF]"
+_AM_PATTERNS = [
+    (re.compile(rf"(?<!{_AR_CHAR}){re.escape(w)}(?!{_AR_CHAR})"), " AM ")
+    for w in sorted(AM_WORDS, key=len, reverse=True)
+]
+_PM_PATTERNS = [
+    (re.compile(rf"(?<!{_AR_CHAR}){re.escape(w)}(?!{_AR_CHAR})"), " PM ")
+    for w in sorted(PM_WORDS, key=len, reverse=True)
+]
 RELATIVE_AR = {
     # بعد + وقت
     "بعد ساعه": "in 1 hour", "بعد ساعة": "in 1 hour",
@@ -159,10 +170,11 @@ def normalize_arabic(text: str) -> str:
     s = re.sub(r"(\d+)\s*و\s*(?:تلت|ثلث)", r"\1:20", s)
 
     # تعبيرات AM/PM: "7 الصبح" → "7 AM" ، "3 العصر" → "3 PM"
-    for w in AM_WORDS:
-        s = s.replace(w, "AM")
-    for w in PM_WORDS:
-        s = s.replace(w, "PM")
+    # نستخدم regex بحدود عربية عشان "ص" ما يتلقطش جوه "العصر"
+    for pattern, replacement in _AM_PATTERNS:
+        s = pattern.sub(replacement, s)
+    for pattern, replacement in _PM_PATTERNS:
+        s = pattern.sub(replacement, s)
 
     # "بعد/كمان X ساعه/ساعات" → "in X hours"
     s = re.sub(r"(?:بعد|كمان)\s+(\d+)\s*(?:ساعه|ساعة|ساعات)", r"in \1 hours", s)
@@ -219,27 +231,42 @@ def clean_title(raw: str) -> str:
     return t if t else raw.strip()
 
 
+def _is_pure_date(text: str) -> bool:
+    """
+    بعد normalize_arabic، لو لسه فيه حروف عربية
+    يبقى فيه كلام مش تاريخ (كلمة من العنوان دخلت بالغلط).
+    """
+    normalized = normalize_arabic(text)
+    return not re.search(r"[\u0600-\u06FF]", normalized)
+
+
 def parse_natural_date(text: str) -> tuple[str, datetime | None]:
     """
     محاولة استخراج التاريخ من النص الطبيعي.
     يرجع (العنوان_النظيف, التاريخ أو None).
     """
-    # حاول تحليل النص كامل كتاريخ
-    parsed = smart_parse(text)
-    if parsed:
-        return text.strip(), parsed
+    # حاول تحليل النص كامل كتاريخ (لو كله تاريخ بدون عنوان)
+    if _is_pure_date(text):
+        parsed = smart_parse(text)
+        if parsed:
+            return text.strip(), parsed
 
     words = text.split()
     best_date = None
     best_title = text.strip()
 
     # ──────────────────────────────────────────
-    # جرب من الأول: الأطول أولاً (عشان "بكرة 9 الصبح" يتلقط قبل "بكرة 9")
+    # جرب من الأول: الأطول أولاً
+    # لكن: لازم بعد normalize ما يفضلش حروف عربية (يعني الجزء ده كله تاريخ)
+    # "بكرة 3 العصر" ✅ → "tomorrow 3 PM"
+    # "بكرة 3 العصر اشتري" ❌ → "tomorrow 3 PM اشتري" (فيه عربي)
     # ──────────────────────────────────────────
     max_date_words = min(len(words) - 1, 6)
     for i in range(max_date_words, 0, -1):
         date_part = " ".join(words[:i])
         title_part = " ".join(words[i:])
+        if not _is_pure_date(date_part):
+            continue
         parsed = smart_parse(date_part)
         if parsed and title_part:
             best_date = parsed
@@ -247,12 +274,15 @@ def parse_natural_date(text: str) -> tuple[str, datetime | None]:
             break
 
     # ──────────────────────────────────────────
-    # جرب من الآخر: الأطول أولاً (عشان "بكرة 3 العصر" يتلقط كامل)
+    # جرب من الآخر (التاريخ في نهاية الجملة)
+    # "اشتري هدية بكرة 3 العصر" → title="اشتري هدية", date="بكرة 3 العصر"
     # ──────────────────────────────────────────
     if not best_date:
         for i in range(1, min(len(words), 6)):
             date_part = " ".join(words[i:])
             title_part = " ".join(words[:i])
+            if not _is_pure_date(date_part):
+                continue
             parsed = smart_parse(date_part)
             if parsed and title_part:
                 best_date = parsed
